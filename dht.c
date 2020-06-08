@@ -9,7 +9,7 @@ MPI_Win win;
 MPI_Comm comm;
 MPI_Info info;
 
-int collisions = 0;
+int collisions;
 int rank, size;
 int *hashtable;
 
@@ -21,7 +21,7 @@ int hash(int key)
 	return key % hashtable_length;
 }
 
-void get(int value)
+int get(int value)
 {
 	int retrieved = NULL;
 	int destRank, destPos;
@@ -30,17 +30,21 @@ void get(int value)
 	destRank = hash_key / hashtable_length_per_p;
 	destPos = hash_key - hashtable_length_per_p * destRank;
 
-	// if(rank == destRank)
-	// printf("temp: %d %d ",destRank,destPos);
-
 	while (1)
 	{
 		MPI_Win_lock(MPI_LOCK_EXCLUSIVE, destRank, 0, win);
 		status = MPI_Get(&retrieved, 1, MPI_INT, destRank, destPos, 1, MPI_INT, win);
 		MPI_Win_unlock(destRank, win);
 
+		if (retrieved == 0)
+		{
+			printf("%d Not found \n", value);
+			return;
+		}
+
 		if (retrieved == value)
 			break;
+
 		hash_key++;
 		destPos++;
 		if (hash_key >= hashtable_length)
@@ -55,19 +59,19 @@ void get(int value)
 				destRank = 0;
 		}
 	}
-	printf("Retrieved %d pos: %d process: %d\n", retrieved, destPos, destRank);
+	printf("Retrieved %d from process: %d position: %d \n", retrieved, destRank, destPos);
 	return retrieved;
 }
 
-void insert(int value)
+void insert(int key, int value)
 {
+	printf("Inserting %d\n", value);
 	int destRank, destPos;
 
-	int hash_key = hash(value);
+	int hash_key = hash(key);
 	destRank = hash_key / hashtable_length_per_p;
 	destPos = hash_key - hashtable_length_per_p * destRank;
 
-	// printf("%d %d %d \n", hash, destRank, destPos);
 	while (1)
 	{
 		int localhash = NULL;
@@ -79,6 +83,7 @@ void insert(int value)
 		if (localhash)
 		{
 			// Another value already present
+			printf("collission with value %d at process: %d  position: %d\n", localhash, destRank, destPos);
 			hash_key++;
 			destPos++;
 			if (hash_key >= hashtable_length)
@@ -100,7 +105,7 @@ void insert(int value)
 			MPI_Put(&value, 1, MPI_INT, destRank, destPos, 1, MPI_INT, win);
 			MPI_Win_unlock(destRank, win);
 
-			printf("Inserted %d pos: %d process: %d\n", value, destPos, destRank);
+			printf("Inserted %d process: %d position: %d\n", value, destRank, destPos);
 
 			return;
 		}
@@ -125,32 +130,45 @@ int init_hashtable()
 	if (hashtable == NULL)
 		exit(1);
 
+	collisions = 0;
 	status = MPI_Win_create(hashtable, hashtable_length_per_p * sizeof(int), sizeof(int), MPI_INFO_NULL, comm, &win);
-	printf("Process %d Hash Table inited Hash table lenth: %d, length per process %d \n", rank, hashtable_length, hashtable_length_per_p);
+	// printf("Process %d Hash Table inited Hash table lenth: %d, length per process %d \n", rank, hashtable_length, hashtable_length_per_p);
+}
+
+void test_dht(int no_test_cases, int test_keys[no_test_cases])
+{
+	for (int i = 0; i < no_test_cases; i++)
+	{
+		insert(test_keys[i], test_keys[i]);
+		printf("-----------------------------------------------------------------------------\n");
+	}
+	printf("\n");
+	for (int i = 0; i < no_test_cases; i++)
+	{
+		int retrieved = get(test_keys[i]);
+		// printf("Retrieved %d",retrieved);
+	}
 }
 
 int main(int argc, char **argv)
 {
 	N = atol(argv[1]);
 
+	int sumCollisions = 0;
 	init_hashtable();
 
+	int test_cases[] = {2, 44, 7, 65, 1, 43, 28, 49, 34, 55, 18, 20, 39, 14};
+	int test_size = sizeof(test_cases) / sizeof(test_cases[0]);
+
 	if (rank == 0)
-	{	
-		insert(3);
-		insert(7);
-		insert(22);
-		insert(43);
-		insert(64);
-
-		printf("\n");
-
-		get(3);
-		get(7);
-		get(22);
-		get(43);
-		get(64);
+	{
+		test_dht(test_size, test_cases);
 	}
-	// Finalize the MPI environment.
+
+	MPI_Reduce(&collisions, &sumCollisions, 1, MPI_INT, MPI_SUM, 0, comm);
+	if (rank == 0)
+	{
+		printf("\nNumber of collisions: %d\n", sumCollisions);
+	}
 	MPI_Finalize();
 }
