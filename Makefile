@@ -2,16 +2,12 @@ ifndef $CC
   CC = mpicc
 endif
 
-CFLAGS = -O3
+targets = linear-probing dht
 
-SOURCE = dht.c
+all: $(targets)
 
-EXE = dht
-
-all: $(EXE)
-
-$(EXE): $(SOURCE)
-	$(CC) $(CFLAGS) -o $(EXE) $(SOURCE)
+%: %.c
+	$(CC) -o $@ $@.c
 
 clean:
-	rm -rf *~ *.o dht
+	rm -rf *.o $(targets)
