@@ -1,27 +1,33 @@
 #include <mpi.h>
 #include <stdio.h>
-#include "linkedlist.h"
+#include "test_cases.h"
+#include <stdlib.h>
+
 
 #define STOP_LISTENING 1
 #define INSERT_MSG 2
 #define GET_MSG 3
 #define GET_ACK 4
 
-int N;
-
-int status = 0;
-int msg[4]; // (index 0 is type(break,insert,get,getsuccess)), 1 is key index, 2 is data index, 3 is destpos or (found status for getreply)
-int success_msg;
 MPI_Win win;
 MPI_Comm comm;
 MPI_Info info;
 
-int collisions;
+int N;
+int status = 0;
+int msg[4]; // (index 0 is type(break,insert,get,getsuccess)), 1 is key index, 2 is data index, 3 is destpos or (found status for getreply)
+int success_msg;
+int ch_collisions;
 int rank, size;
 struct HeadNode *hashtable;
-
 int hashtable_length;
 int hashtable_length_per_p;
+
+struct Node {
+  int key;
+  int data;
+  struct Node* next;
+};
 
 struct HeadNode{
     int index_type;  //0 for empty, 1 single, 2 chained
@@ -31,16 +37,36 @@ struct HeadNode{
     struct Node *next;
 };
 
-int hash(int key)
+void insertAtEnd(struct Node** ref, int key, int data) {
+  struct Node* new_node = (struct Node*)malloc(sizeof(struct Node));
+  struct Node* last = *ref;
+
+  new_node->data = data;
+  new_node->key = key;
+  new_node->next = NULL;
+
+  if (*ref == NULL) {
+    *ref = new_node;
+    return;
+  }
+
+  while (last->next != NULL)
+    last = last->next;
+
+  last->next = new_node;
+  return;
+}
+
+int ch_hash(int key)
 {
 	return key % hashtable_length;
 }
 
-int get(int key)
+int ch_get(int key)
 {
 	struct HeadNode *retrieved = (struct HeadNode*)malloc(sizeof(struct HeadNode));
 	int destRank, destPos;
-	int hash_key = hash(key);
+	int hash_key = ch_hash(key);
     int retrieved_value=0;
 
 	destRank = hash_key / hashtable_length_per_p;
@@ -88,12 +114,12 @@ int get(int key)
 
 }
 
-void insert(int key, int value)
+void ch_insert(int key, int value)
 {
 	printf("Inserting %d\n", value);
 	int destRank, destPos;
 
-	int hash_key = hash(key);
+	int hash_key = ch_hash(key);
 	destRank = hash_key / hashtable_length_per_p;
 	destPos = hash_key - hashtable_length_per_p * destRank;
 
@@ -136,10 +162,10 @@ void insert(int key, int value)
         //local process inserts
         overFlowInsert();
     }
-    collisions++;
+    ch_collisions++;
 }
 
-int init_hashtable()
+int ch_init_hashtable()
 {
 	MPI_Init(NULL, NULL);
 
@@ -157,16 +183,16 @@ int init_hashtable()
 	if (hashtable == NULL)
 		exit(1);
 
-	collisions = 0;
+	ch_collisions = 0;
 	status = MPI_Win_create(hashtable, hashtable_length_per_p * sizeof(struct HeadNode), sizeof(struct HeadNode), MPI_INFO_NULL, comm, &win);
 	// printf("Process %d Hash Table inited Hash table lenth: %d, length per process %d \n", rank, hashtable_length, hashtable_length_per_p);
 }
 
-void test_dht(int no_test_cases, int test_keys[no_test_cases])
+void ch_test_dht(int no_test_cases, int *keys, int *values)
 {
 	for (int i = 0; i < no_test_cases; i++)
 	{
-		insert(test_keys[i], test_keys[i]+10);
+		ch_insert(keys[i], values[i]);
 		printf("-----------------------------------------------------------------------------\n");
 	}
 	printf("\n");
@@ -174,7 +200,7 @@ void test_dht(int no_test_cases, int test_keys[no_test_cases])
 
 	for (int i = 0; i < no_test_cases; i++)
 	{
-		int retrieved = get(test_keys[i]);
+		int retrieved = ch_get(keys[i]);
 	}
 
     //send msg end to all listening nodes
@@ -249,18 +275,28 @@ void freeallocated(){ //review this part for freeing memory
     free(hashtable);
 }
 
+int ch_get_collisions()
+{
+	int sum_collisions = 0;
+	MPI_Reduce(&ch_collisions, &sum_collisions, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	return sum_collisions;
+}
+
 int main(int argc, char **argv)
 {
 	N = atol(argv[1]);
-	int sumCollisions = 0;
-	init_hashtable();
+	ch_init_hashtable();
 
-	int test_cases[] = {2, 44, 7, 65, 1, 43, 28, 49, 34, 55, 18, 20, 39, 14};
-	int test_size = sizeof(test_cases) / sizeof(test_cases[0]);
+
+	// int test_cases[] = {2, 44, 7, 65, 1, 43, 28, 49, 34, 55, 18, 20, 39, 14};
+	// int test_size = sizeof(test_cases) / sizeof(test_cases[0]);
+
+    int test_size;
+	int *test_keys = get_test_keys(size, N, &test_size);
 
 	if (rank == 0)
 	{
-		test_dht(test_size, test_cases);
+		ch_test_dht(test_size, test_keys,test_keys);
 	}else{
         int msg_loop_break=1;
         while(msg_loop_break==1){
@@ -268,10 +304,10 @@ int main(int argc, char **argv)
         }
     }
 
-	MPI_Reduce(&collisions, &sumCollisions, 1, MPI_INT, MPI_SUM, 0, comm);
+    int total_collisions=ch_get_collisions();
 	if (rank == 0)
 	{
-		printf("\nNumber of collisions: %d\n", sumCollisions);
+		printf("\nNumber of collisions: %d\n", total_collisions);
 	}
     freeallocated();
 	MPI_Finalize();
