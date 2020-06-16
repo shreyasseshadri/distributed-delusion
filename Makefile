@@ -2,7 +2,7 @@ ifndef $CC
   CC = mpicc
 endif
 
-targets = linear-probing dht cached-lp
+targets = linear-probing dht cached-lp overflowdht
 
 all: $(targets)
 
