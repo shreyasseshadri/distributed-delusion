@@ -5,7 +5,11 @@
 #include <assert.h>
 #include "cached-lp.h"
 
-int hash(struct CLP_DHT *dht, int key)
+#define CLP_UNOCCUPIED 0
+#define CLP_OCCUPIED 1
+
+int clp_collisions = 0;
+int clp_hash(struct CLP_DHT *dht, int key)
 {
 	return key % dht->ht_length;
 }
@@ -22,7 +26,7 @@ void increment(struct CLP_DHT *dht, int value, int *destPos, int *destRank)
 	}
 }
 
-int check_cache(int cache_length, struct Pair *cached_pairs, int key, int *value)
+int check_cache(int cache_length, struct CLP_Pair *cached_pairs, int key, int *value)
 {
 	for (int i = 0; i < cache_length; i++)
 	{
@@ -37,9 +41,9 @@ int check_cache(int cache_length, struct Pair *cached_pairs, int key, int *value
 
 int clp_get(struct CLP_DHT *dht, int key, int *value)
 {
-	struct Pair local_pair;
+	struct CLP_Pair local_pair;
 
-	int hash_key = hash(dht, key);
+	int hash_key = clp_hash(dht, key);
 	int destRank = hash_key / dht->ht_length_per_process;
 	int destPos = hash_key - dht->ht_length_per_process * destRank;
 	int iniRank = destRank, iniPos = destPos;
@@ -49,9 +53,9 @@ int clp_get(struct CLP_DHT *dht, int key, int *value)
 	while (1)
 	{
 		MPI_Win_lock(MPI_LOCK_EXCLUSIVE, destRank, 0, dht->store_win);
-		MPI_Get(&local_pair, sizeof(struct Pair), MPI_BYTE,
+		MPI_Get(&local_pair, sizeof(struct CLP_Pair), MPI_BYTE,
 				destRank, destPos,
-				sizeof(struct Pair), MPI_BYTE, dht->store_win);
+				sizeof(struct CLP_Pair), MPI_BYTE, dht->store_win);
 		MPI_Win_unlock(destRank, dht->store_win);
 
 		if (local_pair.meta == CLP_OCCUPIED)
@@ -77,12 +81,12 @@ int clp_get(struct CLP_DHT *dht, int key, int *value)
 				}
 
 				CACHE_FLAG = 1;
-				struct Pair *cached_pairs = calloc(length_of_cache_to_bring, sizeof(struct Pair));
+				struct CLP_Pair *cached_pairs = calloc(length_of_cache_to_bring, sizeof(struct CLP_Pair));
 
 				MPI_Win_lock(MPI_LOCK_EXCLUSIVE, destRank, 0, dht->store_win);
-				MPI_Get(cached_pairs, length_of_cache_to_bring * sizeof(struct Pair), MPI_BYTE,
+				MPI_Get(cached_pairs, length_of_cache_to_bring * sizeof(struct CLP_Pair), MPI_BYTE,
 						destRank, destPos,
-						length_of_cache_to_bring * sizeof(struct Pair), MPI_BYTE, dht->store_win);
+						length_of_cache_to_bring * sizeof(struct CLP_Pair), MPI_BYTE, dht->store_win);
 				MPI_Win_unlock(destRank, dht->store_win);
 
 				if (check_cache(length_of_cache_to_bring, cached_pairs, key, value) == CLP_SUCCESS)
@@ -106,10 +110,10 @@ int clp_get(struct CLP_DHT *dht, int key, int *value)
 }
 
 int clp_insert(struct CLP_DHT *dht, int key, int value)
-{
-	struct Pair local_pair;
-	struct Pair pair = {meta : CLP_OCCUPIED, key : key, value : value};
-	int hash_key = hash(dht, key);
+{	
+	struct CLP_Pair local_pair;
+	struct CLP_Pair pair = {meta : CLP_OCCUPIED, key : key, value : value};
+	int hash_key = clp_hash(dht, key);
 	int destRank = hash_key / dht->ht_length_per_process;
 	int destPos = hash_key - dht->ht_length_per_process * destRank;
 	int iniRank = destRank, iniPos = destPos;
@@ -128,7 +132,6 @@ int clp_insert(struct CLP_DHT *dht, int key, int value)
 					destRank, destPos,
 					sizeof(pair), MPI_BYTE, dht->store_win);
 			MPI_Win_unlock(destRank, dht->store_win);
-			printf("Inserted %d process: %d position: %d hash: %d\n", key, destRank, destPos, hash(dht, key));
 			return CLP_SUCCESS;
 		}
 		increment(dht, 1, &destPos, &destRank);
@@ -136,6 +139,7 @@ int clp_insert(struct CLP_DHT *dht, int key, int value)
 		{
 			return CLP_FAILURE;
 		}
+		clp_collisions++;
 	}
 	return CLP_FAILURE;
 }
@@ -149,15 +153,23 @@ int clp_init(struct CLP_DHT *dht, MPI_Info info, MPI_Comm comm, int table_size, 
 	dht->n_process = size;
 	dht->ht_length = table_size;
 	dht->ht_length_per_process = table_size / size;
-	dht->pairs = calloc(dht->ht_length_per_process, sizeof(struct Pair));
+	dht->pairs = calloc(dht->ht_length_per_process, sizeof(struct CLP_Pair));
 	dht->cache_length = cache_length;
-	memset(dht->pairs, CLP_UNOCCUPIED, sizeof(struct Pair) * dht->ht_length_per_process);
+	memset(dht->pairs, CLP_UNOCCUPIED, sizeof(struct CLP_Pair) * dht->ht_length_per_process);
 
-	MPI_Win_create(dht->pairs, dht->ht_length_per_process * sizeof(struct Pair),
-				   sizeof(struct Pair), info, comm, &dht->store_win);
+	MPI_Win_create(dht->pairs, dht->ht_length_per_process * sizeof(struct CLP_Pair),
+				   sizeof(struct CLP_Pair), info, comm, &dht->store_win);
+}
+
+int clp_get_collisions()
+{
+	int sum_collisions = 0;
+	MPI_Reduce(&clp_collisions, &sum_collisions, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	return sum_collisions;
 }
 
 int clp_deinit(struct CLP_DHT *dht)
-{
+{	
+	MPI_Win_free(&dht->store_win);
 	free(dht->pairs);
 }

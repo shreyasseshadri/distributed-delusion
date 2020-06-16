@@ -1,10 +1,7 @@
 #define CLP_SUCCESS 0
 #define CLP_FAILURE 1
 
-#define CLP_UNOCCUPIED 0
-#define CLP_OCCUPIED 1
-
-struct Pair
+struct CLP_Pair
 {
 	int meta;
 	int key;
@@ -13,7 +10,7 @@ struct Pair
 
 struct CLP_DHT
 {
-	struct Pair *pairs;
+	struct CLP_Pair *pairs;
 	int n_process;
 	int ht_length;
 	int ht_length_per_process;
@@ -28,3 +25,5 @@ int clp_deinit(struct CLP_DHT *dht);
 int clp_get(struct CLP_DHT *dht, int key, int *value);
 
 int clp_insert(struct CLP_DHT *dht, int key, int value);
+
+int clp_get_collisions();
