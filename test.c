@@ -8,39 +8,45 @@
 
 void test_lp(struct LP_DHT *dht, int n, int *keys, int *values)
 {
+	clock_t t;
 	for (int i = 0; i < n; i++)
 	{
 		assert(lp_insert(dht, keys[i], values[i]) == CLP_SUCCESS);
 	}
 	int value;
 
-	clock_t t;
+	double time_taken = ((double)t) / CLOCKS_PER_SEC;
+    printf("ch insert time: %f ms\n", time_taken * 1000);
+
 	t = clock();
 	for (int i = 0; i < n; i++)
 	{
 		assert(lp_get(dht, keys[i], &value) == CLP_SUCCESS && value == values[i]);
 	}
 	t = clock() - t;
-	double time_taken = ((double)t) / CLOCKS_PER_SEC;
+	time_taken = ((double)t) / CLOCKS_PER_SEC;
 	printf("LP get time: %f ms\n", time_taken * 1000);
 }
 
 void test_clp(struct CLP_DHT *dht, int n, int *keys, int *values)
 {
+	clock_t t;
 	for (int i = 0; i < n; i++)
 	{
 		assert(clp_insert(dht, keys[i], values[i]) == CLP_SUCCESS);
 	}
 	int value;
 
-	clock_t t;
+	double time_taken = ((double)t) / CLOCKS_PER_SEC;
+    printf("ch insert time: %f ms\n", time_taken * 1000);
+
 	t = clock();
 	for (int i = 0; i < n; i++)
 	{
 		assert(clp_get(dht, keys[i], &value) == CLP_SUCCESS && value == values[i]);
 	}
 	t = clock() - t;
-	double time_taken = ((double)t) / CLOCKS_PER_SEC;
+	time_taken = ((double)t) / CLOCKS_PER_SEC;
 	printf("CLP get time: %f ms\n", time_taken * 1000);
 }
 

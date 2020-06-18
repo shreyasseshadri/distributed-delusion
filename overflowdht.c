@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "test_cases.h"
 #include <stdlib.h>
+#include <time.h>
 
 
 #define STOP_LISTENING 1
@@ -57,6 +58,20 @@ void insertAtEnd(struct Node** ref, int key, int data) {
   return;
 }
 
+struct Node* insertAtBeginning(struct Node** ref, int key, int data) {
+  // Allocate memory to a node
+  struct Node* new_node = (struct Node*)malloc(sizeof(struct Node));
+
+  // insert the item
+  new_node->data = data;
+  new_node->key = key;
+  new_node->next = NULL;
+
+  // Move head to new node
+  (*ref) = new_node;
+  return new_node;
+}
+
 int ch_hash(int key)
 {
 	return key % hashtable_length;
@@ -79,19 +94,19 @@ int ch_get(int key)
 
     if (retrieved->index_type == 0)
     {
-        printf("1. %d Not found \n", key);
+        // printf("1. %d Not found \n", key);
         free(retrieved);
         return;
     }
 
     if (retrieved->key == key){
-        printf("Retrieved %d:%d from process: %d position: %d \n", retrieved->key,retrieved->data, destRank, destPos);
+        // printf("Retrieved %d:%d from process: %d position: %d \n", retrieved->key,retrieved->data, destRank, destPos);
         free(retrieved);
         return;
     }
 
     if (retrieved -> index_type!=2){
-        printf("2. %d Not found \n", key);
+        // printf("2. %d Not found \n", key);
         free(retrieved);
         return;
     }else{
@@ -105,18 +120,18 @@ int ch_get(int key)
         }else{
             overFlowRetrieve();
         }
-        if(msg[3]==1){
-            printf("Retrieved %d:%d from process: %d position: %d \n",msg[1],msg[2], destRank, destPos);
-        }else{
-            printf("3. %d Not found \n", key);
-        }
+        // if(msg[3]==1){
+        //     printf("Retrieved %d:%d from process: %d position: %d \n",msg[1],msg[2], destRank, destPos);
+        // }else{
+        //     printf("3. %d Not found \n", key);
+        // }
     }
 
 }
 
 void ch_insert(int key, int value)
 {
-	printf("Inserting %d\n", value);
+	// printf("Inserting %d\n", value);
 	int destRank, destPos;
 
 	int hash_key = ch_hash(key);
@@ -140,14 +155,14 @@ void ch_insert(int key, int value)
         MPI_Put(localhash, sizeof(struct Node), MPI_BYTE, destRank, destPos, sizeof(struct Node), MPI_BYTE, win);
         MPI_Win_unlock(destRank, win);
 
-        printf("Inserted %d process: %d position: %d\n", value, destRank, destPos);
+        // printf("Inserted %d process: %d position: %d\n", value, destRank, destPos);
         free(localhash);
         return;
     }
     
 
     // Another value already present
-    printf("collission of key:%d with key %d at process: %d  position: %d\n",key,localhash->key, destRank, destPos);
+    // printf("collission of key:%d with key %d at process: %d  position: %d\n",key,localhash->key, destRank, destPos);
     free(localhash);
     msg[0]=INSERT_MSG;
     msg[1]=key;
@@ -185,23 +200,29 @@ int ch_init_hashtable()
 
 	ch_collisions = 0;
 	status = MPI_Win_create(hashtable, hashtable_length_per_p * sizeof(struct HeadNode), sizeof(struct HeadNode), MPI_INFO_NULL, comm, &win);
-	// printf("Process %d Hash Table inited Hash table lenth: %d, length per process %d \n", rank, hashtable_length, hashtable_length_per_p);
 }
 
 void ch_test_dht(int no_test_cases, int *keys, int *values)
 {
+    clock_t t;
+    t = clock();
 	for (int i = 0; i < no_test_cases; i++)
 	{
 		ch_insert(keys[i], values[i]);
-		printf("-----------------------------------------------------------------------------\n");
+		// printf("-----------------------------------------------------------------------------\n");
 	}
-	printf("\n");
+	// printf("\n");
+    double time_taken = ((double)t) / CLOCKS_PER_SEC;
+    printf("ch insert time: %f ms\n", time_taken * 1000);
     
-
+	t = clock();
 	for (int i = 0; i < no_test_cases; i++)
 	{
 		int retrieved = ch_get(keys[i]);
 	}
+    t = clock() - t;
+	time_taken = ((double)t) / CLOCKS_PER_SEC;
+	printf("ch get time: %f ms\n", time_taken * 1000);
 
     //send msg end to all listening nodes
     msg[0]=1;
@@ -220,10 +241,10 @@ void overFlowInsert(){
         newnode->next=NULL;
         hashtable[msg[3]].next=newnode;
     }else{
-        insertAtEnd(&(hashtable[msg[3]].next),msg[1], msg[2]);
+        hashtable[msg[3]].next = insertAtBeginning(&(hashtable[msg[3]].next),msg[1], msg[2]);
     }
     MPI_Win_unlock(rank, win);
-    printf("Chained Insert %d process: %d position: %d\n", msg[1], rank, msg[3]);
+    // printf("Chained Insert %d process: %d position: %d\n", msg[1], rank, msg[3]);
 }
 
 void overFlowRetrieve(){
@@ -284,15 +305,14 @@ int ch_get_collisions()
 
 int main(int argc, char **argv)
 {
-	N = atol(argv[1]);
 	ch_init_hashtable();
 
+    int N = atol(argv[1]);
+	int unique_values = atol(argv[2]);
+	int N_C = atol(argv[3]);
 
-	// int test_cases[] = {2, 44, 7, 65, 1, 43, 28, 49, 34, 55, 18, 20, 39, 14};
-	// int test_size = sizeof(test_cases) / sizeof(test_cases[0]);
-
-    int test_size;
-	int *test_keys = get_test_keys(size, N, &test_size);
+    int test_size = unique_values * N_C;
+	int *test_keys = generate_collided_keys(N, unique_values, N_C);
 
 	if (rank == 0)
 	{
