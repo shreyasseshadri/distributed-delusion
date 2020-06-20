@@ -1,0 +1,15 @@
+#!/bin/sh
+rm test overflowdht
+make 
+make test
+N=40
+multiple=10
+Y=4
+for i in 1 2 3 4 5 6 7
+do
+  X=`expr $N / $Y` 
+  echo "N $N arg1: $X arg2: $Y"
+  N=`expr $N \* 4`;
+  mpirun -n 4 ./test $N $X $Y
+  mpirun -n 4 ./overflowdht $N $X $Y
+done

@@ -212,8 +212,9 @@ void ch_test_dht(int no_test_cases, int *keys, int *values)
 		// printf("-----------------------------------------------------------------------------\n");
 	}
 	// printf("\n");
+    t = clock() - t;
     double time_taken = ((double)t) / CLOCKS_PER_SEC;
-    printf("ch insert time: %f ms\n", time_taken * 1000);
+    printf("CH insert time: %f ms\n", time_taken * 1000);
     
 	t = clock();
 	for (int i = 0; i < no_test_cases; i++)
@@ -222,7 +223,7 @@ void ch_test_dht(int no_test_cases, int *keys, int *values)
 	}
     t = clock() - t;
 	time_taken = ((double)t) / CLOCKS_PER_SEC;
-	printf("ch get time: %f ms\n", time_taken * 1000);
+	printf("CH get time: %f ms\n", time_taken * 1000);
 
     //send msg end to all listening nodes
     msg[0]=1;
@@ -327,7 +328,7 @@ int main(int argc, char **argv)
     int total_collisions=ch_get_collisions();
 	if (rank == 0)
 	{
-		printf("\nNumber of collisions: %d\n", total_collisions);
+		printf("CH Collisions:: %d\n\n", total_collisions);
 	}
     freeallocated();
 	MPI_Finalize();
